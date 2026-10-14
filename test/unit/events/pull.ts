@@ -5,12 +5,37 @@ import { partialMock } from "partial-mock";
 import client from "../../../src/client.ts";
 import * as pull from "../../../src/events/pull.ts";
 
+nock.disableNetConnect();
+
+client.cfg.auth.username = "zulipbot";
+
+function expectChecklist(scope: nock.Scope, number: number) {
+  scope
+    .get(`/repos/zulip/zulipbot/pulls/${number}/commits`)
+    .reply(200, [
+      {
+        sha: "abc1234abc1234abc1234abc1234abc1234abc12",
+        parents: [{}],
+        commit: { message: "Fix all the bugs" },
+      },
+    ])
+    .get(`/repos/zulip/zulipbot/issues/${number}/comments`)
+    .reply(200, [])
+    .post(
+      `/repos/zulip/zulipbot/issues/${number}/comments`,
+      (body: { body: string }) => body.body.includes("<!-- prChecklist -->"),
+    )
+    .reply(201);
+}
+
 const payload: EmitterWebhookEvent<
   "pull_request" | "pull_request_review"
 >["payload"] = partialMock({
   action: "opened",
   pull_request: {
     number: 69,
+    draft: false,
+    state: "open",
     title: "Fix all the bugs",
     user: { login: "octocat" },
     body: null,
@@ -36,6 +61,7 @@ void test("pull: Ignore empty body", async () => {
     .reply(200, [{ commit: { message: "Fix all the bugs" } }])
     .get("/repos/zulip/zulipbot/issues/69/comments")
     .reply(200, []);
+  expectChecklist(scope, 69);
   await pull.run.call(client, payload);
 
   scope.done();
@@ -48,6 +74,8 @@ void test('pull: Single missing reference uses "it" pronoun', async () => {
     action: "opened",
     pull_request: {
       number: 71,
+      draft: false,
+      state: "open",
       title: "Fix bug",
       user: { login: "octocat" },
       body: "Fixes #42",
@@ -76,6 +104,7 @@ void test('pull: Single missing reference uses "it" pronoun', async () => {
         body.body.includes("have not referenced it in your commit"),
     )
     .reply(201);
+  expectChecklist(scope, 71);
   await pull.run.call(client, referencePayload);
 
   scope.done();
@@ -88,6 +117,8 @@ void test('pull: Multiple missing references use "them" pronoun', async () => {
     action: "opened",
     pull_request: {
       number: 72,
+      draft: false,
+      state: "open",
       title: "Fix bugs",
       user: { login: "octocat" },
       body: "Fixes #42, fixes #43",
@@ -118,6 +149,7 @@ void test('pull: Multiple missing references use "them" pronoun', async () => {
         body.body.includes("have not referenced them in your commit"),
     )
     .reply(201);
+  expectChecklist(scope, 72);
   await pull.run.call(client, referencePayload);
 
   scope.done();
@@ -130,6 +162,8 @@ void test("pull: Size label reflects additions + deletions from payload", async 
     action: "opened",
     pull_request: {
       number: 70,
+      draft: false,
+      state: "open",
       title: "Big refactor",
       user: { login: "octocat" },
       body: null,
@@ -155,7 +189,86 @@ void test("pull: Size label reflects additions + deletions from payload", async 
     .reply(200, [])
     .get("/repos/zulip/zulipbot/issues/70/comments")
     .reply(200, []);
+  expectChecklist(scope, 70);
   await pull.run.call(client, bigPayload);
+
+  scope.done();
+});
+
+void test("pull: WIP titles still get the checklist", async () => {
+  const wip: EmitterWebhookEvent<
+    "pull_request" | "pull_request_review"
+  >["payload"] = partialMock({
+    action: "opened",
+    pull_request: {
+      number: 74,
+      draft: false,
+      state: "open",
+      title: "[WIP] compose: Adjust the picker.",
+      user: { login: "octocat" },
+      body: null,
+      additions: 0,
+      deletions: 0,
+    },
+    repository: {
+      owner: { login: "zulip" },
+      name: "zulip",
+    },
+  });
+
+  const scope = nock("https://api.github.com")
+    .get("/repos/zulip/zulip/issues/74/labels")
+    .reply(200, [{ name: "size: XS" }])
+    .get("/repos/zulip/zulip/pulls/74/commits")
+    .reply(200, [
+      {
+        sha: "e".repeat(40),
+        parents: [{}],
+        commit: {
+          message:
+            "compose: Adjust the picker.\n\nThe picker covered the send button.",
+        },
+      },
+    ])
+    .get("/repos/zulip/zulip/issues/74/comments")
+    .reply(200, [])
+    .post("/repos/zulip/zulip/issues/74/comments", (body: { body: string }) =>
+      body.body.includes("<!-- prChecklist -->"),
+    )
+    .reply(201);
+
+  await pull.run.call(client, wip);
+
+  scope.done();
+});
+
+void test("pull: Review edits leave the checklist alone", async () => {
+  const review: EmitterWebhookEvent<
+    "pull_request" | "pull_request_review"
+  >["payload"] = partialMock({
+    action: "edited",
+    review: { user: { login: "reviewer" } },
+    pull_request: {
+      number: 75,
+      draft: false,
+      state: "open",
+      title: "compose: Adjust the picker.",
+      user: { login: "octocat" },
+      body: null,
+      additions: 0,
+      deletions: 0,
+    },
+    repository: {
+      owner: { login: "zulip" },
+      name: "zulip",
+    },
+  });
+
+  const scope = nock("https://api.github.com")
+    .get("/repos/zulip/zulip/issues/75/labels")
+    .reply(200, []);
+
+  await pull.run.call(client, review);
 
   scope.done();
 });

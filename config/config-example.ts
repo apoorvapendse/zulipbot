@@ -137,4 +137,8 @@ export const activity = {
   },
 };
 
+export const checklist = {
+  commits: true,
+};
+
 export const eventsDelay = 3;

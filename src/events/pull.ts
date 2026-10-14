@@ -33,18 +33,31 @@ export const run = async function (
     await responses.areaLabel.run.call(this, issue.data, repo, l);
   }
 
-  if (
-    !shouldCheckReferences ||
-    (this.cfg.pulls.status.wip !== null &&
-      payload.pull_request.title.includes(this.cfg.pulls.status.wip))
-  ) {
-    return;
+  const isWip =
+    this.cfg.pulls.status.wip !== null &&
+    payload.pull_request.title.includes(this.cfg.pulls.status.wip);
+
+  if (shouldCheckReferences && !isWip) {
+    if (action === "opened") {
+      await responses.reference.run.call(
+        this,
+        payload.pull_request,
+        repo,
+        true,
+      );
+    } else if (action === "synchronize") {
+      await responses.reference.run.call(
+        this,
+        payload.pull_request,
+        repo,
+        false,
+      );
+      await responses.pullState.update.call(this, payload.pull_request, repo);
+    }
   }
 
-  if (action === "opened") {
-    await responses.reference.run.call(this, payload.pull_request, repo, true);
-  } else if (action === "synchronize") {
-    await responses.reference.run.call(this, payload.pull_request, repo, false);
-    await responses.pullState.update.call(this, payload.pull_request, repo);
+  // Review events do not change commit messages.
+  if (!("review" in payload)) {
+    await responses.checklist.run.call(this, payload);
   }
 };
