@@ -9,10 +9,6 @@ import * as events from "./events/index.ts";
 const app = express();
 const port = process.env["PORT"] ?? 8080;
 
-app.listen(port, () => {
-  console.log(`Website is running on http://localhost:${port}`);
-});
-
 app.get("/", (_request, response) => {
   response.redirect("https://github.com/zulip/zulipbot");
 });
@@ -103,5 +99,11 @@ for (const key of ["oAuthToken", "webhookSecret"] as const) {
   }
 }
 
+// A comment posted before this login is known cannot be found later,
+// so the next event would post another one and email subscribers again.
 const response = await client.users.getAuthenticated();
 client.cfg.auth.username = response.data.login;
+
+app.listen(port, () => {
+  console.log(`Website is running on http://localhost:${port}`);
+});

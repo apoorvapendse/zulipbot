@@ -114,5 +114,14 @@ export const activity = {
   },
 };
 
+/**
+ * Pull request checklist.
+ * One comment is created and then edited in place.
+ */
+
+export const checklist = {
+  commits: false,
+};
+
 // Delay (in seconds) responses to certain events
 export const eventsDelay = 0;
